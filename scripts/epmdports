@@ -1,0 +1,46 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -smp enable -sname factorial -mnesia debug verbose
+main([StartPort, EndPort]) ->
+    try
+        SPort = list_to_integer(StartPort),
+        EPort = list_to_integer(EndPort),
+        io:format("epmd ports from ~p to ~p~n", [SPort,EPort]),
+        [_|Rest]=lists:reverse(filename:split(code:lib_dir())),
+        Path = filename:join(lists:reverse(["bin"|Rest])),
+        BootFile = filename:join([Path,"start.boot"]),
+        BootFileBackup = filename:join([Path,"start.boot.orig"]),
+        case filelib:is_file(BootFileBackup) of
+            true -> throw({error, "backup file already exists, unable to continue!", BootFileBackup});
+            _ ->
+                {ok, BootBin} = file:read_file(BootFile),
+                {script, OtpVsn, BootTerm} = erlang:binary_to_term(BootBin),
+                io:format(user, "Modifying boot script of ~p~n", [OtpVsn]),
+                {kernelProcess, application_controller, {application_controller,start,Opts}} = lists:keyfind(application_controller,2,BootTerm),
+                {application,kernel,KernelOpts} = lists:keyfind(kernel,2,Opts),
+                {env,EnvOpts} = lists:keyfind(env,1,KernelOpts),
+                {inet_dist_listen_min, OldSPort} = lists:keyfind(inet_dist_listen_min,1,EnvOpts),
+                {inet_dist_listen_max, OldEPort} = lists:keyfind(inet_dist_listen_max,1,EnvOpts),
+                NewEnvOpts = lists:keyreplace(inet_dist_listen_min,1,
+                                lists:keyreplace(inet_dist_listen_max,1,EnvOpts,{inet_dist_listen_max,EPort})
+                                ,{inet_dist_listen_min,SPort}
+                             ),
+                io:format(user, "inet_dist_listen_min, inet_dist_listen_max changed (~p,~p) -> (~p,~p)~n", [OldSPort, OldEPort, SPort, EPort]),
+                NewKernelOpts = lists:keyreplace(env,1,KernelOpts,{env,NewEnvOpts}),
+                NewOpts = lists:keyreplace(kernel,2,Opts,{application,kernel,NewKernelOpts}),
+                NewBootTerm = lists:keyreplace(application_controller,2,BootTerm,{kernelProcess, application_controller, {application_controller,start,NewOpts}}),
+                NewBootBin = erlang:term_to_binary({script, OtpVsn, NewBootTerm}),
+                file:copy(BootFile, BootFileBackup),
+                io:format(user, "Original boot config ~p backed up to ~p~n", [BootFile, BootFileBackup]),
+                ok = file:write_file(BootFile, NewBootBin),
+                io:format(user, "Prepared new boot script at ~p~n", [BootFile])
+        end
+    catch
+        _:Reason -> io:format("Error ~p~n", [Reason])
+    end;
+main(_) ->
+    usage().
+
+usage() ->
+    io:format("usage: epmdports integer integer~n"),
+    halt(1).
