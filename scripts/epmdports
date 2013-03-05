@@ -19,13 +19,19 @@ main([StartPort, EndPort]) ->
                 {kernelProcess, application_controller, {application_controller,start,Opts}} = lists:keyfind(application_controller,2,BootTerm),
                 {application,kernel,KernelOpts} = lists:keyfind(kernel,2,Opts),
                 {env,EnvOpts} = lists:keyfind(env,1,KernelOpts),
-                {inet_dist_listen_min, OldSPort} = lists:keyfind(inet_dist_listen_min,1,EnvOpts),
-                {inet_dist_listen_max, OldEPort} = lists:keyfind(inet_dist_listen_max,1,EnvOpts),
-                NewEnvOpts = lists:keyreplace(inet_dist_listen_min,1,
-                                lists:keyreplace(inet_dist_listen_max,1,EnvOpts,{inet_dist_listen_max,EPort})
+		case lists:keyfind(inet_dist_listen_min,1,EnvOpts) of
+	                {inet_dist_listen_min, OldSPort} -> io:format(user, "old inet_dist_listen_min ~p, ", [OldSPort]);
+			false -> ok
+		end,
+		case lists:keyfind(inet_dist_listen_max,1,EnvOpts) of
+	                {inet_dist_listen_max, OldEPort} -> io:format(user, "old inet_dist_listen_max ~p~n", [OldEPort]);
+			false -> ok
+		end,
+                NewEnvOpts = lists:keystore(inet_dist_listen_min,1,
+                                lists:keystore(inet_dist_listen_max,1,EnvOpts,{inet_dist_listen_max,EPort})
                                 ,{inet_dist_listen_min,SPort}
                              ),
-                io:format(user, "inet_dist_listen_min, inet_dist_listen_max changed (~p,~p) -> (~p,~p)~n", [OldSPort, OldEPort, SPort, EPort]),
+                io:format(user, "new inet_dist_listen_min ~p, new inet_dist_listen_max ~p~n", [SPort, EPort]),
                 NewKernelOpts = lists:keyreplace(env,1,KernelOpts,{env,NewEnvOpts}),
                 NewOpts = lists:keyreplace(kernel,2,Opts,{application,kernel,NewKernelOpts}),
                 NewBootTerm = lists:keyreplace(application_controller,2,BootTerm,{kernelProcess, application_controller, {application_controller,start,NewOpts}}),
